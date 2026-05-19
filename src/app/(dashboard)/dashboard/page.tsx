@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import {
   CalendarDays, Users, Package, AlertTriangle,
-  TrendingUp, CheckCircle2, Clock, ChevronRight,
+  CheckCircle2, Clock, ChevronRight, Settings,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -55,7 +55,6 @@ export default async function DashboardPage() {
   const hoy = new Date();
   const fechaHoy = format(hoy, "yyyy-MM-dd");
 
-  // Obtener datos en paralelo
   const [
     { data: reservasHoy },
     { data: empleadosActivos },
@@ -63,6 +62,7 @@ export default async function DashboardPage() {
     { data: incidenciasAbiertas },
     { data: checklistsHoy },
     { data: perfil },
+    { data: local },
   ] = await Promise.all([
     supabase.from("reservas")
       .select("id, nombre_cliente, num_personas, hora, estado, mesa_id")
@@ -86,7 +86,10 @@ export default async function DashboardPage() {
       .select("id, tipo, completado")
       .eq("fecha", fechaHoy),
     supabase.from("perfiles")
-      .select("nombre, rol")
+      .select("nombre, rol, local_id, onboarding_completado")
+      .single(),
+    supabase.from("locales")
+      .select("onboarding_completado, onboarding_paso_actual")
       .single(),
   ]);
 
@@ -95,6 +98,7 @@ export default async function DashboardPage() {
   const saludo = horaActual < 13 ? "Buenos días" : horaActual < 20 ? "Buenas tardes" : "Buenas noches";
   const fechaFormateada = format(hoy, "EEEE, d 'de' MMMM", { locale: es });
   const checklistsCompletos = checklistsHoy?.filter(c => c.completado).length ?? 0;
+  const onboardingIncompleto = !local?.onboarding_completado && (perfil?.rol === "admin" || perfil?.rol === "encargado");
 
   const prioridadColor: Record<string, string> = {
     urgente: "badge-red",
@@ -106,6 +110,27 @@ export default async function DashboardPage() {
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto animate-fade-in">
 
+      {/* Banner onboarding incompleto */}
+      {onboardingIncompleto && (
+        <div className="mb-5 bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-amber-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Settings size={18} className="text-amber-600" />
+            </div>
+            <div>
+              <p className="font-semibold text-amber-900 text-sm leading-tight">Completa la configuración de tu local</p>
+              <p className="text-amber-600 text-xs mt-0.5">
+                Faltan algunos pasos para tener todo a punto. Solo tardas 2 minutos.
+              </p>
+            </div>
+          </div>
+          <Link href="/onboarding"
+            className="btn-primary bg-amber-500 hover:bg-amber-600 text-white border-0 flex-shrink-0 text-sm py-2 px-4">
+            Configurar →
+          </Link>
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-6">
         <p className="text-slate-400 text-sm capitalize">{fechaFormateada}</p>
@@ -116,38 +141,17 @@ export default async function DashboardPage() {
 
       {/* KPIs principales */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <StatCard
-          icon={CalendarDays}
-          label="Reservas hoy"
-          value={reservasHoy?.length ?? 0}
+        <StatCard icon={CalendarDays} label="Reservas hoy" value={reservasHoy?.length ?? 0}
           sub={`${reservasHoy?.reduce((a, r) => a + r.num_personas, 0) ?? 0} personas`}
-          color="teal"
-          href="/operaciones"
-        />
-        <StatCard
-          icon={Users}
-          label="Empleados activos"
-          value={empleadosActivos?.length ?? 0}
-          sub="en plantilla"
-          color="slate"
-          href="/personal"
-        />
-        <StatCard
-          icon={Package}
-          label="Stock bajo mínimo"
-          value={stockBajoMinimo?.length ?? 0}
+          color="teal" href="/operaciones" />
+        <StatCard icon={Users} label="Empleados activos" value={empleadosActivos?.length ?? 0}
+          sub="en plantilla" color="slate" href="/personal" />
+        <StatCard icon={Package} label="Stock bajo mínimo" value={stockBajoMinimo?.length ?? 0}
           sub={stockBajoMinimo?.length ? "Pedir hoy" : "Todo OK"}
-          color={stockBajoMinimo?.length ? "amber" : "teal"}
-          href="/stock"
-        />
-        <StatCard
-          icon={AlertTriangle}
-          label="Incidencias abiertas"
-          value={incidenciasAbiertas?.length ?? 0}
+          color={stockBajoMinimo?.length ? "amber" : "teal"} href="/stock" />
+        <StatCard icon={AlertTriangle} label="Incidencias abiertas" value={incidenciasAbiertas?.length ?? 0}
           sub={incidenciasAbiertas?.length ? "Requieren atención" : "Sin incidencias"}
-          color={incidenciasAbiertas?.length ? "red" : "teal"}
-          href="/operaciones"
-        />
+          color={incidenciasAbiertas?.length ? "red" : "teal"} href="/operaciones" />
       </div>
 
       {/* Fila inferior: Reservas + Incidencias */}
@@ -197,8 +201,6 @@ export default async function DashboardPage() {
 
         {/* Panel derecho: Stock + Checklists */}
         <div className="space-y-4">
-
-          {/* Stock bajo mínimo */}
           <div className="card p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-bold text-slate-800 flex items-center gap-2">
@@ -212,8 +214,7 @@ export default async function DashboardPage() {
             {stockBajoMinimo && stockBajoMinimo.length > 0 ? (
               <div className="space-y-2">
                 {stockBajoMinimo.map((p) => (
-                  <div key={p.id}
-                    className="flex items-center justify-between text-sm">
+                  <div key={p.id} className="flex items-center justify-between text-sm">
                     <span className="text-slate-700 font-medium truncate">{p.nombre}</span>
                     <span className="badge badge-amber ml-2 flex-shrink-0">
                       {p.stock_actual} / {p.stock_minimo}
@@ -229,7 +230,6 @@ export default async function DashboardPage() {
             )}
           </div>
 
-          {/* Checklists */}
           <div className="card p-4">
             <h2 className="font-bold text-slate-800 flex items-center gap-2 mb-3">
               <Clock size={16} className="text-teal-600" />
@@ -239,10 +239,7 @@ export default async function DashboardPage() {
               <div className="space-y-2">
                 {checklistsHoy.map((c) => (
                   <div key={c.id} className="flex items-center gap-2 text-sm">
-                    <CheckCircle2
-                      size={16}
-                      className={c.completado ? "text-teal-500" : "text-slate-200"}
-                    />
+                    <CheckCircle2 size={16} className={c.completado ? "text-teal-500" : "text-slate-200"} />
                     <span className={c.completado ? "text-slate-400 line-through" : "text-slate-700"}>
                       {c.tipo ?? "Checklist"}
                     </span>
@@ -264,7 +261,6 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Incidencias abiertas */}
       {incidenciasAbiertas && incidenciasAbiertas.length > 0 && (
         <div className="card p-4">
           <div className="flex items-center justify-between mb-3">
@@ -276,8 +272,7 @@ export default async function DashboardPage() {
           </div>
           <div className="space-y-2">
             {incidenciasAbiertas.map((i) => (
-              <div key={i.id}
-                className="flex items-start gap-3 py-2 border-b border-slate-50 last:border-0">
+              <div key={i.id} className="flex items-start gap-3 py-2 border-b border-slate-50 last:border-0">
                 <span className={`badge ${prioridadColor[i.prioridad ?? "media"]} flex-shrink-0 mt-0.5`}>
                   {i.prioridad}
                 </span>
@@ -290,4 +285,4 @@ export default async function DashboardPage() {
 
     </div>
   );
-}
+        }
