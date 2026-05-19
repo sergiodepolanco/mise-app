@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -24,18 +24,25 @@ export async function proxy(request: NextRequest) {
   );
 
   const { data: { user } } = await supabase.auth.getUser();
+  const pathname = request.nextUrl.pathname;
 
-  if (!user && !request.nextUrl.pathname.startsWith("/login")) {
+  // Sin sesión → login
+  if (!user && !pathname.startsWith("/login") && !pathname.startsWith("/p/")) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
 
-  if (user && request.nextUrl.pathname.startsWith("/login")) {
+  // Con sesión en login → dashboard
+  if (user && pathname.startsWith("/login")) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);
   }
+
+  // Con sesión: si es primer login → onboarding (sugerido, no forzado aquí)
+  // La lógica de redirección a /onboarding se gestiona desde el dashboard (banner)
+  // El proxy solo garantiza que /onboarding es accesible para usuarios autenticados
 
   return supabaseResponse;
 }
