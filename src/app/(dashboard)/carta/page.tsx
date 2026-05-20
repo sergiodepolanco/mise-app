@@ -1,8 +1,32 @@
-export default function CartaPage() {
+import { createClient } from "@/lib/supabase/server";
+import CartaClient from "./CartaClient";
+
+export const metadata = { title: "MISE — Carta" };
+
+export default async function CartaPage() {
+  const supabase = await createClient();
+
+  const [
+    { data: perfil },
+    { data: categorias },
+    { data: platos },
+  ] = await Promise.all([
+    supabase.from("perfiles").select("local_id").single(),
+    supabase.from("categorias_carta")
+      .select("id, nombre, descripcion, orden, activa")
+      .eq("activa", true)
+      .order("orden"),
+    supabase.from("platos")
+      .select("id, local_id, categoria_id, nombre, descripcion, precio_venta, coste_estimado, tiempo_prep, foto_url, disponible, en_menu_dia, activo, orden, notas_cocina")
+      .eq("activo", true)
+      .order("orden"),
+  ]);
+
   return (
-    <div className="p-4 md:p-6">
-      <h1 className="text-2xl font-black text-slate-900 mb-2 capitalize">carta</h1>
-      <p className="text-slate-400">Módulo en construcción — próximamente.</p>
-    </div>
+    <CartaClient
+      localId={perfil?.local_id ?? ""}
+      initialCategorias={categorias ?? []}
+      initialPlatos={platos ?? []}
+    />
   );
 }
